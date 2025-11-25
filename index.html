@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Walkerbay POS System</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        walkerBlue: '#002B5B', 
+                        walkerLight: '#F4F8FB',
+                        walkerGold: '#D4AF37',
+                    },
+                    fontFamily: {
+                        sans: ['Montserrat', 'sans-serif'],
+                        mono: ['Space Mono', 'monospace'], // For receipts
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        /* Receipt Modal Animation */
+        .modal {
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            opacity: 0;
+        }
+        .modal.active {
+            pointer-events: auto;
+            opacity: 1;
+        }
+
+        /* PRINT STYLES - CRITICAL FOR RECEIPT */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #printable-receipt-container, #printable-receipt-container * {
+                visibility: visible;
+            }
+            #printable-receipt-container {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+                background: white;
+            }
+            /* Hide non-print elements */
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-walkerLight h-screen flex flex-col overflow-hidden">
+
+    <!-- Top Navbar -->
+    <nav class="bg-walkerBlue text-white h-16 flex items-center justify-between px-6 shadow-lg shrink-0 z-20">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-walkerGold rounded-full flex items-center justify-center text-walkerBlue font-bold">W</div>
+            <h1 class="font-bold text-xl tracking-wider">WALKERBAY <span class="text-walkerGold">POS</span></h1>
+        </div>
+        <div class="text-sm opacity-80">
+            <span id="clock" class="font-mono bg-white/10 px-3 py-1 rounded">00:00:00</span>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- LEFT SIDE: Product Catalog -->
+        <div class="w-2/3 flex flex-col p-4">
+            
+            <!-- Category Filter -->
+            <div class="flex space-x-2 mb-4 overflow-x-auto pb-2 shrink-0">
+                <button onclick="filterProducts('all')" class="bg-white border border-gray-200 px-6 py-3 rounded-lg font-bold hover:bg-walkerBlue hover:text-white transition shadow-sm active-cat text-walkerBlue">All</button>
+                <button onclick="filterProducts('accommodation')" class="bg-white border border-gray-200 px-6 py-3 rounded-lg font-bold hover:bg-walkerBlue hover:text-white transition shadow-sm text-gray-600"><i class="fas fa-bed mr-2"></i>Rooms</button>
+                <button onclick="filterProducts('food')" class="bg-white border border-gray-200 px-6 py-3 rounded-lg font-bold hover:bg-walkerBlue hover:text-white transition shadow-sm text-gray-600"><i class="fas fa-utensils mr-2"></i>Dining</button>
+                <button onclick="filterProducts('excursion')" class="bg-white border border-gray-200 px-6 py-3 rounded-lg font-bold hover:bg-walkerBlue hover:text-white transition shadow-sm text-gray-600"><i class="fas fa-map-marked-alt mr-2"></i>Excursions</button>
+                <button onclick="addCustomItem()" class="bg-walkerGold text-walkerBlue px-6 py-3 rounded-lg font-bold hover:bg-yellow-500 transition shadow-sm"><i class="fas fa-plus mr-2"></i>Custom</button>
+            </div>
+
+            <!-- Product Grid -->
+            <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2 pb-20">
+                <!-- Products injected via JS -->
+            </div>
+        </div>
+
+        <!-- RIGHT SIDE: Cart / Bill -->
+        <div class="w-1/3 bg-white shadow-2xl flex flex-col z-10 border-l border-gray-200">
+            
+            <!-- Customer Info -->
+            <div class="p-4 border-b border-gray-100 bg-gray-50">
+                <label class="text-xs font-bold text-gray-400 uppercase">Guest Name / Room No</label>
+                <input type="text" id="customer-name" placeholder="Enter Guest Details..." class="w-full bg-transparent border-b border-gray-300 focus:border-walkerBlue outline-none py-2 text-walkerBlue font-semibold">
+            </div>
+
+            <!-- Cart Items List -->
+            <div id="cart-items" class="flex-1 overflow-y-auto p-4 space-y-3">
+                <!-- Cart items injected via JS -->
+                <div class="text-center text-gray-400 mt-10 text-sm italic empty-msg">No items added yet.</div>
+            </div>
+
+            <!-- Totals & Actions -->
+            <div class="p-6 bg-gray-50 border-t border-gray-200">
+                <div class="flex justify-between mb-2 text-sm text-gray-500">
+                    <span>Subtotal</span>
+                    <span id="subtotal">KSh 0.00</span>
+                </div>
+                <div class="flex justify-between mb-4 text-sm text-gray-500">
+                    <span>Tax (Included)</span>
+                    <span class="text-xs">(VAT 16%)</span>
+                </div>
+                <div class="flex justify-between mb-6 text-2xl font-bold text-walkerBlue">
+                    <span>Total</span>
+                    <span id="total-display">KSh 0.00</span>
+                </div>
+
+                <button onclick="processCheckout()" class="w-full bg-walkerBlue text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-900 transition shadow-lg flex justify-center items-center">
+                    <i class="fas fa-print mr-3"></i> Generate Receipt
+                </button>
+                
+                <button onclick="clearCart()" class="w-full mt-2 text-red-500 py-2 text-sm hover:text-red-700">
+                    Clear Order
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receipt Modal (Hidden by default) -->
+    <div id="receipt-modal" class="modal fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-md h-[90vh] flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                <h3 class="font-bold text-walkerBlue">Receipt Preview</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-red-500 text-xl"><i class="fas fa-times"></i></button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto bg-gray-200 p-8 flex justify-center">
+                <!-- THE ACTUAL THERMAL RECEIPT -->
+                <div id="printable-receipt-container" class="bg-white p-6 shadow-md w-[80mm] min-h-[100mm] text-black font-mono text-sm leading-tight">
+                    <!-- Receipt Header -->
+                    <div class="text-center mb-6">
+                        <h2 class="font-bold text-xl mb-1 uppercase">Walkerbay Hotels</h2>
+                        <p class="text-xs">Muhuru Bay, Lake Victoria</p>
+                        <p class="text-xs">Tel: +254 700 346 672</p>
+                        <p class="text-xs">reservations@walkerbayhotels.com</p>
+                    </div>
+                    
+                    <div class="border-b-2 border-dashed border-gray-300 mb-4 pb-2">
+                        <div class="flex justify-between text-xs">
+                            <span>Date: <span id="receipt-date"></span></span>
+                            <span>Time: <span id="receipt-time"></span></span>
+                        </div>
+                        <div class="flex justify-between text-xs mt-1">
+                            <span>Receipt #: <span id="receipt-id">WB-001</span></span>
+                        </div>
+                        <div class="text-xs mt-1 font-bold">Guest: <span id="receipt-guest">Walk-in</span></div>
+                    </div>
+
+                    <!-- Items Header -->
+                    <div class="flex text-xs font-bold mb-2 border-b border-black pb-1">
+                        <span class="w-1/2">Item</span>
+                        <span class="w-1/4 text-center">Qty</span>
+                        <span class="w-1/4 text-right">Amt</span>
+                    </div>
+
+                    <!-- Receipt Items -->
+                    <div id="receipt-body" class="mb-4">
+                        <!-- Dynamic Content -->
+                    </div>
+
+                    <!-- Totals -->
+                    <div class="border-t-2 border-dashed border-gray-300 pt-2 mb-6">
+                        <div class="flex justify-between font-bold text-lg">
+                            <span>TOTAL</span>
+                            <span id="receipt-total">KSh 0</span>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="text-center text-xs space-y-1">
+                        <p>Thank you for visiting Walkerbay!</p>
+                        <p>Please retain receipt for records.</p>
+                        <p>***</p>
+                        <p>www.walkerbayhotels.com</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t bg-white rounded-b-lg flex gap-3">
+                <button onclick="window.print()" class="flex-1 bg-walkerBlue text-white py-3 rounded font-bold hover:bg-blue-900 shadow">Print Receipt</button>
+                <button onclick="closeModal()" class="flex-1 border border-gray-300 text-gray-600 py-3 rounded font-bold hover:bg-gray-50">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        /* --- 1. PRODUCT DATA (Based on prompt) --- */
+        const products = [
+            // ACCOMMODATION
+            { id: 101, name: "Standard Room (Single)", price: 1500, category: "accommodation", icon: "fa-bed" },
+            { id: 102, name: "Standard Room (Double)", price: 2000, category: "accommodation", icon: "fa-user-friends" },
+            { id: 103, name: "Suite Room (Single)", price: 2000, category: "accommodation", icon: "fa-star" },
+            { id: 104, name: "Suite Room (Double)", price: 2500, category: "accommodation", icon: "fa-gem" },
+            
+            // FOOD & BEVERAGE
+            { id: 201, name: "Arr. Light Lunch", price: 300, category: "food", icon: "fa-sandwich" },
+            { id: 202, name: "Buffet Breakfast", price: 500, category: "food", icon: "fa-coffee" },
+            { id: 203, name: "Buffet Lunch (Fish)", price: 800, category: "food", icon: "fa-fish" },
+            { id: 204, name: "Buffet Dinner", price: 800, category: "food", icon: "fa-utensils" },
+            { id: 205, name: "Soda / Water", price: 100, category: "food", icon: "fa-bottle-water" },
+            { id: 206, name: "Tea / Coffee Pot", price: 200, category: "food", icon: "fa-mug-hot" },
+            
+            // EXCURSIONS
+            { id: 301, name: "Speedboat Ride", price: 1500, category: "excursion", icon: "fa-ship" },
+            { id: 302, name: "Mugabo Caves Tour", price: 500, category: "excursion", icon: "fa-mountain" },
+            { id: 303, name: "Ongwe Island Trip", price: 1000, category: "excursion", icon: "fa-island-tropical" },
+            { id: 304, name: "Full Package (Bed Only)", price: 6000, category: "excursion", icon: "fa-suitcase" }, // Based on package note
+        ];
+
+        /* --- 2. STATE MANAGEMENT --- */
+        let cart = [];
+        
+        /* --- 3. INIT & CLOCK --- */
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString();
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+        renderProducts(products);
+
+        /* --- 4. RENDER FUNCTIONS --- */
+        function renderProducts(items) {
+            const grid = document.getElementById('product-grid');
+            grid.innerHTML = '';
+            
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-lg shadow cursor-pointer hover:shadow-lg hover:-translate-y-1 transition border border-gray-100 flex flex-col justify-between h-32";
+                div.onclick = () => addToCart(item);
+                
+                div.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <span class="text-walkerBlue font-bold text-sm leading-tight">${item.name}</span>
+                        <i class="fas ${item.icon} text-walkerGold/50 text-xl"></i>
+                    </div>
+                    <div class="text-right mt-auto">
+                        <span class="bg-blue-50 text-walkerBlue px-2 py-1 rounded text-sm font-bold">KSh ${item.price.toLocaleString()}</span>
+                    </div>
+                `;
+                grid.appendChild(div);
+            });
+        }
+
+        function filterProducts(category) {
+            // Update UI buttons
+            // (Simplified class toggling logic)
+            const btns = document.querySelectorAll('button[onclick^="filterProducts"]');
+            btns.forEach(b => {
+                b.classList.remove('bg-walkerBlue', 'text-white');
+                b.classList.add('bg-white', 'text-gray-600');
+            });
+            event.currentTarget.classList.remove('bg-white', 'text-gray-600');
+            event.currentTarget.classList.add('bg-walkerBlue', 'text-white');
+
+            if(category === 'all') {
+                renderProducts(products);
+            } else {
+                const filtered = products.filter(p => p.category === category);
+                renderProducts(filtered);
+            }
+        }
+
+        /* --- 5. CART LOGIC --- */
+        function addToCart(item, customPrice = null) {
+            // Check if item exists in cart
+            const existingItem = cart.find(i => i.id === item.id && i.price === (customPrice || item.price));
+            
+            if (existingItem) {
+                existingItem.qty++;
+            } else {
+                cart.push({
+                    ...item,
+                    price: customPrice || item.price,
+                    qty: 1
+                });
+            }
+            updateCartUI();
+        }
+
+        function removeFromCart(index) {
+            cart.splice(index, 1);
+            updateCartUI();
+        }
+
+        function changeQty(index, delta) {
+            cart[index].qty += delta;
+            if (cart[index].qty <= 0) {
+                cart.splice(index, 1);
+            }
+            updateCartUI();
+        }
+
+        function addCustomItem() {
+            const name = prompt("Enter Item Name:");
+            if (!name) return;
+            const price = parseFloat(prompt("Enter Price (KSh):"));
+            if (isNaN(price)) return;
+            
+            addToCart({
+                id: 'custom-' + Date.now(),
+                name: name,
+                price: price,
+                icon: 'fa-pen',
+                category: 'custom'
+            });
+        }
+
+        function clearCart() {
+            if(confirm('Clear current order?')) {
+                cart = [];
+                updateCartUI();
+            }
+        }
+
+        function updateCartUI() {
+            const cartContainer = document.getElementById('cart-items');
+            
+            if (cart.length === 0) {
+                cartContainer.innerHTML = '<div class="text-center text-gray-400 mt-10 text-sm italic">No items added yet.</div>';
+                document.getElementById('subtotal').innerText = 'KSh 0.00';
+                document.getElementById('total-display').innerText = 'KSh 0.00';
+                return;
+            }
+
+            cartContainer.innerHTML = '';
+            let total = 0;
+
+            cart.forEach((item, index) => {
+                const itemTotal = item.price * item.qty;
+                total += itemTotal;
+
+                const div = document.createElement('div');
+                div.className = "flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100";
+                div.innerHTML = `
+                    <div class="flex-1">
+                        <div class="text-sm font-bold text-walkerBlue">${item.name}</div>
+                        <div class="text-xs text-gray-500">@ ${item.price}</div>
+                    </div>
+                    <div class="flex items-center space-x-2 mr-4">
+                        <button onclick="changeQty(${index}, -1)" class="w-6 h-6 rounded bg-gray-200 text-gray-600 hover:bg-red-100 hover:text-red-500 flex items-center justify-center">-</button>
+                        <span class="text-sm font-bold w-4 text-center">${item.qty}</span>
+                        <button onclick="changeQty(${index}, 1)" class="w-6 h-6 rounded bg-gray-200 text-gray-600 hover:bg-green-100 hover:text-green-500 flex items-center justify-center">+</button>
+                    </div>
+                    <div class="text-sm font-bold text-gray-700 w-20 text-right">
+                        ${itemTotal.toLocaleString()}
+                    </div>
+                `;
+                cartContainer.appendChild(div);
+            });
+
+            document.getElementById('subtotal').innerText = 'KSh ' + total.toLocaleString();
+            document.getElementById('total-display').innerText = 'KSh ' + total.toLocaleString();
+        }
+
+        /* --- 6. CHECKOUT & RECEIPT LOGIC --- */
+        function processCheckout() {
+            if (cart.length === 0) {
+                alert("Cart is empty!");
+                return;
+            }
+
+            const guestName = document.getElementById('customer-name').value || "Walk-in Guest";
+            const date = new Date();
+            const receiptId = "WB-" + Math.floor(1000 + Math.random() * 9000);
+
+            // Populate Receipt Data
+            document.getElementById('receipt-date').innerText = date.toLocaleDateString();
+            document.getElementById('receipt-time').innerText = date.toLocaleTimeString();
+            document.getElementById('receipt-id').innerText = receiptId;
+            document.getElementById('receipt-guest').innerText = guestName;
+
+            const receiptBody = document.getElementById('receipt-body');
+            receiptBody.innerHTML = '';
+
+            let grandTotal = 0;
+
+            cart.forEach(item => {
+                const total = item.price * item.qty;
+                grandTotal += total;
+                const row = document.createElement('div');
+                row.className = "flex justify-between text-xs mb-1";
+                row.innerHTML = `
+                    <span class="w-1/2 truncate">${item.name}</span>
+                    <span class="w-1/4 text-center">${item.qty} x ${item.price}</span>
+                    <span class="w-1/4 text-right">${total.toLocaleString()}</span>
+                `;
+                receiptBody.appendChild(row);
+            });
+
+            document.getElementById('receipt-total').innerText = "KSh " + grandTotal.toLocaleString();
+
+            // Show Modal
+            document.getElementById('receipt-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('receipt-modal').classList.remove('active');
+        }
+    </script>
+</body>
+</html>
